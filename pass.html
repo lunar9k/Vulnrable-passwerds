@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compromised Password Checker</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for better aesthetics and readability */
+        body {
+            font-family: 'Inter', sans-serif;
+            /* Dark background */
+            background-color: #111827; 
+        }
+        .word-item {
+            padding: 8px 12px;
+            border-bottom: 1px solid #374151; /* Dark border */
+            transition: background-color 0.15s ease-in-out;
+            font-family: monospace; 
+        }
+        .word-item:hover {
+            background-color: #1f2937; /* Darker hover state */
+        }
+        /* Custom scrollbar for the word list area (Dark Theme) */
+        #wordListContainer::-webkit-scrollbar {
+            width: 8px;
+        }
+        #wordListContainer::-webkit-scrollbar-thumb {
+            background-color: #4b5563; /* Gray-600 equivalent */
+            border-radius: 4px;
+        }
+        #wordListContainer::-webkit-scrollbar-track {
+            background-color: #1f2937; /* Gray-800 equivalent */
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen">
+
+    <div class="max-w-4xl mx-auto bg-gray-800 shadow-2xl rounded-xl p-6 md:p-8">
+        <header class="mb-6 border-b border-gray-700 pb-4">
+            <p class="text-sm font-semibold text-indigo-400 mb-1">Part of the CyberNexus Project</p>
+            <h1 class="text-3xl font-extrabold text-white flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-indigo-400 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 2a8 8 0 100 16 8 8 0 000-16zM5 9a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1zm1-5a1 1 0 000 2h8a1 1 0 100-2H6zM4 11a1 1 0 011-1h8a1 1 0 110 2H5a1 1 0 01-1-1zM4 13a1 1 0 011-1h8a1 1 0 110 2H5a1 1 0 01-1-1z" clip-rule="evenodd" />
+                </svg>
+                Compromised Password Checker
+            </h1>
+            <p class="text-sm text-gray-300 mt-2 p-3 bg-red-900/30 border-l-4 border-red-600/50 rounded-md">
+                This tool checks your password against a list of common or **known-compromised** passwords.
+                **It is crucial** because if your password appears here, it is easily crackable or already public.
+                Please **DO NOT** type your actual current password, use it to check potential new passwords.
+            </p>
+        </header>
+
+        <!-- Search and Status Bar -->
+        <div class="mb-6 flex flex-col sm:flex-row gap-4">
+            <input type="text" id="searchBar" placeholder="Type a password to check if it's compromised..." 
+                   class="flex-grow p-3 bg-gray-700 border border-gray-600 text-white rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 shadow-sm"
+                   oninput="filterWords()">
+            
+            <div id="resultStatus" class="px-4 py-3 bg-gray-700 text-gray-300 font-bold rounded-lg shadow-inner whitespace-nowrap flex items-center justify-center">
+                Start Checking
+            </div>
+        </div>
+        
+        <!-- Detailed Status Message Area (Compromised/Safe Advice) -->
+        <div id="statusMessage" class="min-h-[50px] mb-6 p-4 rounded-lg text-center text-sm font-medium bg-gray-900/20 border border-dashed border-gray-700 text-gray-400">
+            Search above to check the status of a potential password.
+        </div>
+
+        <!-- Word List Display Area - Now only shows matches -->
+        <div id="wordListContainer" class="border border-gray-700 rounded-lg h-72 overflow-y-auto bg-gray-900/30 divide-y divide-gray-700 shadow-inner">
+            <p class="text-center p-8 text-gray-400" id="loadingMessage">Loading wordlist data...</p>
+            <!-- Filtered matching words will be dynamically inserted here -->
+        </div>
+        <p class="text-xs text-gray-500 mt-2 text-center" id="matchCount"></p>
+        
+        <!-- Creator Footer -->
+        <footer class="mt-8 pt-4 border-t border-gray-700 text-center">
+            <p class="text-xs text-gray-500">
+                A CyberNexus Project utility created by <span class="font-semibold text-indigo-400">Lalit Kudmethe</span>.
+            </p>
+        </footer>
+
+
+        <!-- Notification Message Box -->
+        <div id="messageBox" class="hidden fixed bottom-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg"></div>
+
+    </div>
+
+    <script>
+        // Global variables
+        let allWords = [];
+        const filename = "password-wordlist.txt";
+        
+        const searchBar = document.getElementById('searchBar');
+        const resultStatusDisplay = document.getElementById('resultStatus');
+        const statusMessage = document.getElementById('statusMessage');
+        const wordListContainer = document.getElementById('wordListContainer');
+        const loadingMessage = document.getElementById('loadingMessage');
+        const messageBox = document.getElementById('messageBox');
+        const matchCount = document.getElementById('matchCount');
+        
+        /**
+         * Displays a temporary notification message.
+         * @param {string} message The message to display.
+         * @param {string} type 'success' or 'error' to set color.
+         */
+        function showMessage(message, type = 'error') {
+            messageBox.textContent = message;
+            // Adjusted notification colors for dark theme contrast
+            messageBox.className = `fixed bottom-4 right-4 px-4 py-2 rounded-lg shadow-lg transition-opacity duration-300 ${type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`;
+            messageBox.classList.remove('hidden');
+            setTimeout(() => {
+                messageBox.classList.add('hidden');
+            }, 3000);
+        }
+
+        /**
+         * Renders the list of words into the container.
+         * @param {string[]} wordsToDisplay The array of words to render.
+         */
+        function renderWords(wordsToDisplay) {
+            wordListContainer.innerHTML = ''; // Clear existing content
+            
+            if (wordsToDisplay.length === 0) {
+                wordListContainer.innerHTML = '<p class="text-center p-8 text-gray-400">No close matches found in the compromised list.</p>';
+                matchCount.textContent = '';
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            wordsToDisplay.forEach(word => {
+                const div = document.createElement('div');
+                div.className = 'word-item text-gray-200 text-sm font-medium hover:text-indigo-400 cursor-pointer';
+                div.textContent = word;
+                div.setAttribute('title', 'Click to copy');
+                
+                // Add click listener for copy functionality
+                div.addEventListener('click', () => copyToClipboard(word));
+
+                fragment.appendChild(div);
+            });
+
+            wordListContainer.appendChild(fragment);
+            matchCount.textContent = `Displaying ${wordsToDisplay.length.toLocaleString()} matching entry/entries.`;
+        }
+
+        /**
+         * Copies a word to the user's clipboard.
+         * @param {string} text The text to copy.
+         */
+        function copyToClipboard(text) {
+            try {
+                const tempTextArea = document.createElement('textarea');
+                tempTextArea.value = text;
+                tempTextArea.style.position = 'fixed'; 
+                document.body.appendChild(tempTextArea);
+                tempTextArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(tempTextArea);
+                showMessage(`Copied: "${text}"`, 'success'); 
+            } catch (err) {
+                console.error('Could not copy text: ', err);
+                showMessage('Failed to copy text. Please try manually.', 'error');
+            }
+        }
+
+
+        /**
+         * Filters the words based on the search bar input and updates status.
+         */
+        function filterWords() {
+            const query = searchBar.value.trim();
+            
+            // Clear status and list if search bar is empty
+            if (query === "") {
+                resultStatusDisplay.className = "px-4 py-3 bg-gray-700 text-gray-300 font-bold rounded-lg shadow-inner whitespace-nowrap flex items-center justify-center";
+                resultStatusDisplay.textContent = "Start Checking";
+                statusMessage.className = "min-h-[50px] mb-6 p-4 rounded-lg text-center text-sm font-medium bg-gray-900/20 border border-dashed border-gray-700 text-gray-400";
+                statusMessage.innerHTML = "Search above to check the status of a potential password.";
+                renderWords([]);
+                return;
+            }
+
+            // Check for exact match first (case-sensitive as passwords usually are)
+            const isCompromised = allWords.includes(query);
+
+            if (isCompromised) {
+                // HIGH ALERT: Compromised
+                resultStatusDisplay.className = "px-4 py-3 bg-red-600 text-white font-bold rounded-lg shadow-inner whitespace-nowrap flex items-center justify-center";
+                resultStatusDisplay.textContent = "COMPROMISED!";
+                
+                // Dark theme red background for compromised message
+                statusMessage.className = "mb-6 p-4 rounded-lg text-sm font-medium bg-red-900 border-2 border-red-600 text-red-300";
+                statusMessage.innerHTML = `
+                    <p class="font-extrabold text-lg">⚠️ Compromise Detected</p>
+                    <p class="mt-1">The password **${query}** has been found in this list of compromised credentials.</p>
+                    <p class="mt-2 font-bold">Suggestion:</p>
+                    <ul class="list-disc list-inside ml-2">
+                        <li>**NEVER** use this password anywhere.</li>
+                        <li>Change any account using this password immediately.</li>
+                        <li>Choose a new password that is long (12+ characters) and mixes different character types.</li>
+                    </ul>
+                `;
+                // Only render the exact match
+                renderWords([query]);
+
+            } else {
+                // NOT FOUND, but check for potential close matches (sub-strings)
+                resultStatusDisplay.className = "px-4 py-3 bg-green-600 text-white font-bold rounded-lg shadow-inner whitespace-nowrap flex items-center justify-center";
+                resultStatusDisplay.textContent = "NOT FOUND (Good)";
+                
+                // Dark theme green background for safe message
+                statusMessage.className = "mb-6 p-4 rounded-lg text-sm font-medium bg-green-900 border-2 border-green-600 text-green-300";
+                
+                const filteredWords = allWords.filter(word => word.toLowerCase().includes(query.toLowerCase()));
+                
+                if (filteredWords.length > 0) {
+                    // Password not an exact match, but contains a compromised fragment.
+                    statusMessage.innerHTML = `
+                        <p class="font-extrabold text-lg">✅ Not Found (Check Further)</p>
+                        <p class="mt-1">This exact password was **not** found, but ${filteredWords.length} compromised entries contain part of your search. This indicates a potential risk.</p>
+                        <p class="mt-2 font-bold">Suggestion:</p>
+                        <ul class="list-disc list-inside ml-2">
+                            <li>Avoid using common words or fragments as your base.</li>
+                            <li>Your chosen password should be completely random and unique.</li>
+                        </ul>
+                    `;
+                    // Render close matches to show why it's a risk
+                    renderWords(filteredWords);
+
+                } else {
+                    // Password appears safe based on this list
+                    statusMessage.innerHTML = `
+                        <p class="font-extrabold text-lg">✨ Password Appears Safe!</p>
+                        <p class="mt-1">This password was **not found** in the compromised list. This is a positive sign.</p>
+                        <p class="mt-2 font-bold">Suggestion:</p>
+                        <ul class="list-disc list-inside ml-2">
+                            <li>Always use a unique password for every site.</li>
+                            <li>Use a password manager to securely generate and store complex passwords.</li>
+                        </ul>
+                    `;
+                    // Nothing to render in the list
+                    renderWords([]);
+                }
+            }
+        }
+
+        /**
+         * Fetches the uploaded file content and initializes the wordlist.
+         */
+        async function initializeWordlist() {
+            try {
+                loadingMessage.textContent = 'Fetching file...';
+                
+                // Fetch the file content from the same directory
+                const response = await fetch(filename);
+                
+                if (!response.ok) {
+                    // Try to provide a more helpful message if the file is missing
+                    throw new Error(`HTTP error! Status: ${response.status}. Is '${filename}' present?`);
+                }
+                
+                const text = await response.text();
+                
+                // Split by newline, filter empty lines, and trim whitespace
+                const rawWords = text.split(/\r?\n/);
+                allWords = rawWords
+                    .map(word => word.trim())
+                    .filter(word => word.length > 0);
+                
+                loadingMessage.textContent = `Wordlist loaded (${allWords.length.toLocaleString()} entries). Ready to check passwords.`;
+                
+                // Clear the list to force user interaction
+                wordListContainer.innerHTML = '';
+
+            } catch (error) {
+                console.error('Initialization Error:', error);
+                loadingMessage.className = "text-center p-8 text-red-400"; // Red text for error in dark theme
+                loadingMessage.textContent = `Error loading wordlist: ${error.message}. Please ensure '${filename}' is in the same folder as this HTML file.`;
+                resultStatusDisplay.textContent = 'Error';
+                showMessage('Could not load wordlist file.', 'error');
+            }
+        }
+
+        // Start the application
+        window.onload = initializeWordlist;
+    </script>
+</body>
+</html>
